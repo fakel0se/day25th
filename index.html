@@ -1,0 +1,193 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="https://code.createjs.com/createjs-2015.11.26.min.js"> </script>
+    <script src="https://code.createjs.com/easeljs-0.8.0.min.js"> </script>
+    <script src="https://code.createjs.com/tweenjs-0.6.2.min.js"> </script>
+    <script src="https://cdn.socket.io/socket.io-1.2.0.js"> </script>
+    <title>Canvas Animation</title>
+    <style>
+      #canvas {border: solid 1px black; cursor:none;}
+    </style>
+  </head> 
+  <body>
+    <canvas id="canvas"></canvas><br>
+    <script >
+		var socket = io();
+		
+		stage = new createjs.Stage("canvas");
+		canvas = document.querySelector('canvas');
+		canvas.width = window.innerWidth - 50;
+		canvas.height = window.innerHeight - 50;
+		var circle;
+		var mouseX;
+		var mouseY;
+		//var train;
+		var pointSheet = new createjs.SpriteSheet({
+				images: ["/my"],
+				frames: {width: 38, height: 38}
+		});
+		point = new createjs.Sprite(pointSheet, 1);
+		stage.addChild(point);
+		point.x = 0;
+		point.y = 0;
+		var points = {
+			x: point.x,
+			y: point.y
+		};
+		
+		socket.on('user connected', function(UserId){
+			circle = new createjs.Shape();
+			
+			let radius = RandomNumb(20, 50);
+			let color = 'rgba(' + RandomNumb(0,255) + ',' + RandomNumb(0,255) + ',' + RandomNumb(0,255) + ',1)';
+			circle.graphics.beginFill(color).drawCircle(0, 0, radius);
+			stage.addChild(circle);
+			
+			circle.x = RandomNumb(50,canvas.width - 50);
+			circle.y = RandomNumb(50,canvas.height - 50);
+
+			stage.update;
+			socket.emit('connection done', circle.x, circle.y, color, radius, UserId, mouseX, mouseY);
+		});
+		
+		socket.on('user done', function(coordx, coordy, plcol, plrad, userid, mouseX, mouseY){
+			CreateCircle(coordx, coordy, plcol, plrad, userid);
+			CreatePoint(mouseX, mouseY, userid);
+		});
+
+		socket.on('show other', function(users){
+			for(user in users){
+				CreateCircle(users[user].x, users[user].y, users[user].col, users[user].rad, user);
+				CreatePoint(users[user].msX, users[user].msY, user);
+			}       
+		});
+
+		socket.on('user disconnected', function(UserId){
+			stage.removeChild(window[UserId]);
+			stage.removeChild(points[UserId]);
+		});
+		
+		//socket.on('moving', function(UserId){
+			stage.on("stagemousemove", function(evt) {
+				mouseX = evt.stageX;
+				mouseY = evt.stageY;
+				createjs.Tween
+					.get(point, { loop: false })
+					.to({ x: evt.stageX - 19, y: evt.stageY - 19 }, 1);
+				createjs.Tween
+					.get(circle)
+					.to({ x: circle.x + ((evt.stageX - circle.x)/10) , y: circle.y + ((evt.stageY - circle.y)/10)}, 100);
+				//console.log('circle ' + circle.x + ' / ' + circle.y);
+				socket.emit('moving done', circle.x, circle.y, evt.stageX, evt.stageY);
+				socket.emit('create train', circle.x, circle.y);
+				});
+			//});
+		
+		socket.on('moving done', function(user, userid){
+				window[userid].x = user.x;
+				window[userid].y = user.y;
+				let train = new createjs.Shape();
+				let radius = user.rad;
+				let color = user.col;
+				train.graphics.beginFill(color).drawCircle(0, 0, radius);
+				train.x = user.x;
+				train.y = user.y;
+				stage.addChild(train);
+				train.addEventListener("tick", handleTick);
+				function handleTick(event) {
+					console.log(train.alpha);
+					if (train.alpha < 0.1) {
+						stage.removeChild(train);
+					};
+					train.alpha = train.alpha - 0.01;
+					train.scaleX = train.scaleX * 0.98;
+					train.scaleY  = train.scaleY * 0.98;
+			};
+		});
+		
+		socket.on('create train', function (users, coordx, coordy, UserId) {
+			//console.log('train html ', users[UserId].rad);
+			CreateTrain(users, coordx, coordy, UserId);
+		});
+		
+		createjs.Ticker.addEventListener("tick", handleTick);
+		function handleTick(event) {
+			socket.emit('moving point', mouseX, mouseY); 
+			stage.update();
+		}
+		
+		socket.on('moving point', function(mX, mY, UserId){
+		console.log('mX ' + mX + ' mY: ' + mY);
+			points[UserId].x = mX;
+			points[UserId].y = mY;
+		});
+		
+		createjs.Ticker.setFPS(60);
+		createjs.Ticker.addEventListener("tick", stage);
+			
+		function onTickHandler(evt) {  
+			//stage.update;
+        };
+		
+        window.addEventListener('resize', onResize, false);
+        onResize();
+        function onResize() {
+			canvas.width = window.innerWidth;
+			canvas.height = window.innerHeight;
+        };
+		
+		function RandomNumb(min, max){
+			return Math.random() * (max - min) + min;
+		}	
+		
+		function CreateCircle(X,Y,col,rad,Id){
+			var circle = new createjs.Shape();
+			circle.graphics.beginFill(col).drawCircle(0, 0, rad);
+			window[Id] = circle;
+			stage.addChild(window[Id]);
+			window[Id].x = X;
+			window[Id].y = Y;
+			stage.update;
+		};
+		
+		function CreatePoint(mX,mY,Id){
+			console.log(mX);
+			let pointSheet = new createjs.SpriteSheet({
+				images: ["/other"],
+				frames: {width: 38, height: 38}
+			});
+			let point = new createjs.Sprite(pointSheet, 1);
+			points[Id] = point;
+			stage.addChild(points[Id]);
+			points[Id].x = mX;
+			points[Id].y = mY;
+		};
+		
+		function CreateTrain (clients, X, Y, userid) {
+			let train = new createjs.Shape();
+			let radius = clients[userid].rad;
+			let color = clients[userid].col;
+			train.graphics.beginFill(color).drawCircle(0, 0, radius);
+			train.x = X;
+			train.y = Y;
+			stage.addChild(train);
+			train.addEventListener("tick", handleTick);
+			function handleTick(event) {
+				console.log(train.alpha);
+				if (train.alpha < 0.1) {
+					stage.removeChild(train);
+				};
+				train.alpha = train.alpha - 0.01;
+				train.scaleX = train.scaleX * 0.98;
+				train.scaleY  = train.scaleY * 0.98;
+			};
+		};
+		
+    </script>
+  </body>
+</html>
+
+
+
+
